@@ -51,19 +51,30 @@ body::before {
         );
 }
 
-/* ===== サイドバー / Sidebar ===== */
+/* ===== 一覧メニュー / List Menu (Sidebar Navigation) ===== */
 #Sidebar,
 .sidebar,
-.side-nav {
-    background: rgba(255, 243, 224, 0.95) !important;
-    border-right: 2px solid var(--border-orange) !important;
+.side-nav,
+#NavigationMenu,
+.nav-menu,
+#TreeMenu,
+.tree-menu,
+#LeftArea,
+.left-area {
+    background: var(--orange-primary) !important;
+    border-right: 2px solid var(--orange-darker) !important;
     box-shadow: 2px 0 10px var(--shadow-orange) !important;
 }
 
 #Sidebar .nav-link,
 .sidebar .nav-link,
-.side-nav a {
-    color: var(--text-dark) !important;
+.side-nav a,
+#NavigationMenu a,
+.nav-menu a,
+#TreeMenu a,
+.tree-menu a,
+#LeftArea a {
+    color: var(--text-on-orange) !important;
     border-radius: 6px;
     margin: 2px 6px;
     transition: background 0.2s, color 0.2s;
@@ -72,9 +83,23 @@ body::before {
 #Sidebar .nav-link:hover,
 .sidebar .nav-link:hover,
 .side-nav a:hover,
+#NavigationMenu a:hover,
+.nav-menu a:hover,
+#TreeMenu a:hover,
+.tree-menu a:hover,
+#LeftArea a:hover,
 #Sidebar .nav-link.active,
 .sidebar .nav-link.active {
-    background: var(--orange-light) !important;
+    background: var(--orange-darker) !important;
+    color: #fff !important;
+}
+
+/* メニュー内のテキスト・アイコン類 */
+#Sidebar *,
+.sidebar *,
+#NavigationMenu *,
+#TreeMenu *,
+#LeftArea * {
     color: var(--text-on-orange) !important;
 }
 
