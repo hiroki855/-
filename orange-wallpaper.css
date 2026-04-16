@@ -51,30 +51,6 @@ body::before {
         );
 }
 
-/* ===== ナビゲーションバー / Navigation Bar ===== */
-#Navbar,
-.navbar,
-nav.navbar {
-    background: var(--orange-gradient) !important;
-    box-shadow: 0 2px 12px var(--shadow-orange) !important;
-    border-bottom: 2px solid var(--orange-dark) !important;
-}
-
-#Navbar a,
-.navbar a,
-.navbar .navbar-brand,
-.navbar .nav-link {
-    color: var(--text-on-orange) !important;
-    text-shadow: 0 1px 2px rgba(0,0,0,0.2);
-}
-
-#Navbar a:hover,
-.navbar a:hover,
-.navbar .nav-link:hover {
-    color: #FFE0B2 !important;
-    opacity: 0.9;
-}
-
 /* ===== サイドバー / Sidebar ===== */
 #Sidebar,
 .sidebar,
@@ -114,17 +90,6 @@ nav.navbar {
     border: 1px solid rgba(255, 179, 102, 0.3) !important;
     position: relative;
     z-index: 1;
-}
-
-/* ===== ヘッダー / Page Header ===== */
-#HeaderTitle,
-.page-header,
-.site-title,
-h1.title {
-    color: var(--orange-dark) !important;
-    border-bottom: 3px solid var(--orange-light) !important;
-    padding-bottom: 8px !important;
-    text-shadow: 1px 1px 2px rgba(255,107,0,0.12);
 }
 
 /* ===== ボタン / Buttons ===== */
