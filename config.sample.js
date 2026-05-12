@@ -8,7 +8,7 @@
 const ADDRESS_RESOLVER_CONFIG = {
   // PostcodeJP
   API_ENDPOINT: "https://apis.postcode-jp.com/api/v6/parse",
-  API_KEY: "（PostcodeJPダッシュボードで取得して書き換える）",
+  API_KEY: "bPJ8yVbLib6qqNfzxydYFh9gkVb5GO",
 
   // 対象サイト
   SITE_ID: 44884,
