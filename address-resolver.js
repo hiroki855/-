@@ -148,6 +148,10 @@
     return "住所検索に失敗しました";
   }
 
+  // 連続呼び出し防止用の状態
+  let _lastFiredValue = null;
+  let _inflight = false;
+
   /**
    * 住所欄の値変更時のメイン処理。
    */
@@ -155,31 +159,49 @@
     const addrEl = getControlEl(F.ADDRESS_FULL);
     if (!addrEl) return;
 
-    UI.clearMessage();
-    UI.removeDropdown();
-
     const raw = addrEl.value || "";
     const normalized = U.normalizeInput(raw);
+
     if (!normalized) {
+      UI.clearMessage();
+      UI.removeDropdown();
+      _lastFiredValue = "";
       clearRelatedFields();
       return;
     }
+
+    // 直前に処理したのと同じ値なら何もしない（input/change 重複・再フォーカス対策）
+    if (normalized === _lastFiredValue) return;
+    if (_inflight) return;
+
+    _lastFiredValue = normalized;
+    UI.clearMessage();
+    UI.removeDropdown();
 
     let candidates;
     if (U.cacheHas(normalized)) {
       candidates = U.cacheGet(normalized);
     } else {
-      const result = await callParseApi(normalized);
+      _inflight = true;
+      let result;
+      try {
+        result = await callParseApi(normalized);
+      } finally {
+        _inflight = false;
+      }
       if (result.status === "timeout") {
         UI.showMessage(addrEl, "住所検索がタイムアウトしました", "error");
+        _lastFiredValue = null; // 再試行可能にする
         return;
       }
       if (result.status === "network") {
         UI.showMessage(addrEl, "住所検索サービスが一時停止しています", "error");
+        _lastFiredValue = null;
         return;
       }
       if (result.status === "http_error") {
         UI.showMessage(addrEl, messageForHttp(result.httpStatus), "error");
+        _lastFiredValue = null;
         return;
       }
       candidates = extractCandidates(result.body);
@@ -226,8 +248,9 @@
       console.warn(`[address-resolver] ${F.ADDRESS_FULL} 入力欄が見つかりません`);
       return;
     }
-    $ctrl.off("change.addrResolver input.addrResolver");
-    $ctrl.on("change.addrResolver input.addrResolver", debouncedHandler);
+    $ctrl.off("change.addrResolver input.addrResolver blur.addrResolver");
+    // change のみ採用（input は連発するため Free プランのレート制限に抵触しやすい）
+    $ctrl.on("change.addrResolver", debouncedHandler);
     console.debug("[address-resolver] イベント登録完了");
   }
 
