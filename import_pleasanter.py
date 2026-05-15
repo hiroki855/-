@@ -252,9 +252,14 @@ def search_existing(duplicate_key_value: str):
     data_list = result.get("Response", {}).get("Data", [])
 
     # サーバ側フィルタが部分一致になっている可能性も考えて、Python側でも厳密一致を確認する
+    # 分類項目の値は、レスポンス上 "ClassA" のような直下プロパティと
+    # "ClassHash": {"ClassA": ...} のネストの両方に現れうるので両方を見る。
     for record in data_list:
-        # 分類項目は "ClassA" のようなキーで値が直接入る
-        if str(record.get(DUPLICATE_KEY_CODE, "")) == str(duplicate_key_value):
+        v = record.get(DUPLICATE_KEY_CODE)
+        if v is None:
+            v = record.get("ClassHash", {}).get(DUPLICATE_KEY_CODE)
+        if v is not None and str(v) == str(duplicate_key_value):
+            # 記録テーブル=ResultId、期限付きテーブル=IssueId
             return record.get("ResultId") or record.get("IssueId")
     return None
 
@@ -266,8 +271,12 @@ def create_record(payload: dict) -> dict:
 
 
 def update_record(record_id, payload: dict) -> dict:
-    """既存レコード更新API"""
-    url = f"{HOST_URL}/api/items/{SITE_ID}/{record_id}/update"
+    """既存レコード更新API。
+    更新APIのURLは /api/items/{recordId}/update であり、サイトIDは含まない点に注意。
+    （Pleasanterはサイトもレコードも同じItemsテーブルで管理しており、
+     コントローラ側で recordId からどのサイトの所属かを解決する）
+    """
+    url = f"{HOST_URL}/api/items/{record_id}/update"
     return api_post(url, payload)
 
 
