@@ -70,13 +70,13 @@
   }
 
   /**
-   * API 1件の候補から共通フォーマット { postalCode, address, japanese, score } へ変換。
+   * API 1件の候補から共通フォーマット { postalCode, address, japanese, score, formattedAddress } へ変換。
    */
-  function normalizeCandidate(postalCodeRaw, japanese, score) {
+  function normalizeCandidate(postalCodeRaw, japanese, score, formattedAddress) {
     const postalCode = U.formatPostalCode(postalCodeRaw);
     const v = U.buildFieldValues(japanese);
     const address = U.joinNonEmpty([v.prefecture, v.city, v.district, v.rest], "");
-    return { postalCode, address, japanese, score };
+    return { postalCode, address, japanese, score, formattedAddress: formattedAddress || "" };
   }
 
   /**
@@ -113,6 +113,84 @@
     } finally {
       clearTimeout(timer);
     }
+  }
+
+  /**
+   * /parse が postal_code を返さなかった場合のフォールバック検索。
+   * 構造化済み住所要素から検索キーを組み立て、/postcodes に問い合わせる。
+   * @param {object} japanese - /parse の japanese オブジェクト
+   * @param {string} [formattedAddress] - /parse の meta.formatted_address があれば優先
+   * @returns {Promise<string|null>} 7桁数字の郵便番号、見つからなければ null
+   */
+  async function lookupPostalCodeByAddress(japanese, formattedAddress) {
+    if (!CFG.ENABLE_POSTCODE_FALLBACK) return null;
+    if (!CFG.POSTCODES_ENDPOINT) return null;
+
+    // 検索文字列: formatted_address を優先、なければ japanese から構築
+    let q = (formattedAddress || "").trim();
+    if (!q && japanese) {
+      const j = japanese;
+      const chomePart = j.chome ? `${j.chome}丁目` : "";
+      q = [j.prefecture, j.county, j.city, j.ward, j.district, chomePart]
+        .map((p) => (p == null ? "" : String(p)))
+        .filter(Boolean)
+        .join("");
+    }
+    if (!q) return null;
+
+    // Free プラン (1req/sec) に当たらないよう /parse 直後を避ける
+    await new Promise((r) => setTimeout(r, CFG.POSTCODE_FALLBACK_DELAY_MS || 1100));
+
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), CFG.REQUEST_TIMEOUT_MS);
+    try {
+      const url = `${CFG.POSTCODES_ENDPOINT}?q=${encodeURIComponent(q)}&limit=1`;
+      const res = await fetch(url, {
+        method: "GET",
+        headers: { "apikey": CFG.API_KEY },
+        signal: ctrl.signal,
+      });
+      if (!res.ok) {
+        console.warn(`[address-resolver] /postcodes フォールバック失敗: HTTP ${res.status}`);
+        return null;
+      }
+      const body = await res.json();
+      if (!lookupPostalCodeByAddress._logged) {
+        console.debug("[address-resolver] /postcodes レスポンス（最初の1回のみ表示）:", body);
+        lookupPostalCodeByAddress._logged = true;
+      }
+      return extractFirstPostcode(body);
+    } catch (e) {
+      console.warn("[address-resolver] /postcodes フォールバック例外:", e);
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  /**
+   * /postcodes レスポンスから先頭1件の郵便番号を抽出する。
+   * レスポンスの構造揺れに耐えるよう複数経路を試す。
+   * @returns {string|null} 7桁数字 or null
+   */
+  function extractFirstPostcode(body) {
+    if (!body) return null;
+    let arr = null;
+    if (Array.isArray(body)) arr = body;
+    else if (Array.isArray(body.data)) arr = body.data;
+    else if (Array.isArray(body.results)) arr = body.results;
+    else if (Array.isArray(body.addresses)) arr = body.addresses;
+    else if (Array.isArray(body.postcodes)) arr = body.postcodes;
+
+    if (!arr || arr.length === 0) return null;
+    const first = arr[0];
+    if (!first) return null;
+    const raw = first.postcode || first.postal_code
+      || (first.meta && first.meta.postal_code)
+      || first.zipcode || null;
+    if (!raw) return null;
+    const digits = String(raw).replace(/\D/g, "");
+    return digits.length === 7 ? digits : null;
   }
 
   /**
@@ -178,6 +256,8 @@
     if (body.meta && typeof body.meta.score === "number") score = body.meta.score;
     else if (typeof body.score === "number") score = body.score;
 
+    const formattedAddress = (body.meta && body.meta.formatted_address) || body.formatted_address || "";
+
     if (codes.length === 0 && japaneseList.length === 0) return [];
 
     const len = Math.max(codes.length, japaneseList.length, 1);
@@ -186,7 +266,7 @@
       const code = codes[i] != null ? codes[i] : codes[0];
       const jp = japaneseList[i] != null ? japaneseList[i] : japaneseList[0];
       if (code == null && jp == null) continue;
-      out.push(normalizeCandidate(code, jp, score));
+      out.push(normalizeCandidate(code, jp, score, formattedAddress));
     }
     return out;
   }
@@ -277,6 +357,21 @@
     if (!candidates || candidates.length === 0) {
       UI.showMessage(addrEl, "住所が正しく解析できませんでした", "error");
       return;
+    }
+
+    // /parse が郵便番号を返さなかった場合は /postcodes でフォールバック検索
+    if (candidates[0] && !candidates[0].postalCode && candidates[0].japanese) {
+      console.debug("[address-resolver] /parse の郵便番号が null。/postcodes でフォールバック検索します");
+      const fallbackRaw = await lookupPostalCodeByAddress(
+        candidates[0].japanese,
+        candidates[0].formattedAddress
+      );
+      if (fallbackRaw) {
+        candidates[0].postalCode = U.formatPostalCode(fallbackRaw);
+        console.debug("[address-resolver] フォールバックで郵便番号を取得:", candidates[0].postalCode);
+      } else {
+        console.debug("[address-resolver] フォールバックでも郵便番号が見つかりませんでした");
+      }
     }
 
     // スコア判定（先頭候補のスコアで判断）
