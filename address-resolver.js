@@ -240,6 +240,22 @@
   const debouncedHandler = U.debounce(handleAddressChange, CFG.DEBOUNCE_MS);
 
   /**
+   * 編集画面ロード時、住所欄に値があり郵便番号が空ならインポート扱いで自動解析する。
+   * CSV インポート直後にレコードを開いた場合、change イベントが発火しないため必要。
+   */
+  function autoResolveIfImported() {
+    const addrEl = getControlEl(F.ADDRESS_FULL);
+    const postalEl = getControlEl(F.POSTAL_CODE);
+    if (!addrEl) return;
+    const addr = (addrEl.value || "").trim();
+    const postal = postalEl ? (postalEl.value || "").trim() : "";
+    if (addr && !postal) {
+      console.debug("[address-resolver] インポート相当を検出: 自動解析を実行");
+      handleAddressChange();
+    }
+  }
+
+  /**
    * プリザンター編集画面のロード時にイベント登録。
    */
   function register() {
@@ -252,6 +268,8 @@
     // change のみ採用（input は連発するため Free プランのレート制限に抵触しやすい）
     $ctrl.on("change.addrResolver", debouncedHandler);
     console.debug("[address-resolver] イベント登録完了");
+
+    autoResolveIfImported();
   }
 
   if (typeof $p !== "undefined" && $p.events) {

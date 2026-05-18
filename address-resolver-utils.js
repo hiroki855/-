@@ -59,6 +59,21 @@ const AddressResolverUtils = (() => {
   }
 
   /**
+   * 丁目の値を表記用に整える。
+   * PostcodeJP は chome を数値で返すケースがあるため "1" → "1丁目" のように補う。
+   * 既に "丁目" を含む場合はそのまま。
+   * @param {*} chome
+   * @returns {string}
+   */
+  function formatChome(chome) {
+    if (chome == null) return "";
+    const s = String(chome).trim();
+    if (!s) return "";
+    if (s.endsWith("丁目")) return s;
+    return `${s}丁目`;
+  }
+
+  /**
    * PostcodeJP の japanese オブジェクトから 4 区分を生成する。
    * 連結ルールは要件 §4.1 参照。
    * @param {object} japanese
@@ -68,7 +83,7 @@ const AddressResolverUtils = (() => {
     const j = japanese || {};
     const prefecture = (j.prefecture || "").trim();
     const city = joinNonEmpty([j.county, j.city, j.ward], "");
-    const district = joinNonEmpty([j.district, j.chome], "");
+    const district = joinNonEmpty([j.district, formatChome(j.chome)], "");
 
     const blockHouse = joinNonEmpty([j.block, j.house_num], "-");
     const rest = joinNonEmpty([blockHouse, j.building, j.room], " ");
@@ -108,6 +123,7 @@ const AddressResolverUtils = (() => {
   return {
     normalizeInput,
     formatPostalCode,
+    formatChome,
     joinNonEmpty,
     buildFieldValues,
     debounce,
