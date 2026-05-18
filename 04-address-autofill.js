@@ -117,26 +117,28 @@
 
   /**
    * /parse が postal_code を返さなかった場合のフォールバック検索。
-   * 構造化済み住所要素から検索キーを組み立て、/postcodes に問い合わせる。
+   * 構造化済み住所要素から PostcodeJP v6 のフィルタ式を組み立てて /postcodes に問い合わせる。
+   * フィルタ構文: pref==東京都 and city==葛飾区 and town==東金町
    * @param {object} japanese - /parse の japanese オブジェクト
-   * @param {string} [formattedAddress] - /parse の meta.formatted_address があれば優先
    * @returns {Promise<string|null>} 7桁数字の郵便番号、見つからなければ null
    */
-  async function lookupPostalCodeByAddress(japanese, formattedAddress) {
+  async function lookupPostalCodeByAddress(japanese) {
     if (!CFG.ENABLE_POSTCODE_FALLBACK) return null;
     if (!CFG.POSTCODES_ENDPOINT) return null;
+    if (!japanese) return null;
 
-    // 検索文字列: formatted_address を優先、なければ japanese から構築
-    let q = (formattedAddress || "").trim();
-    if (!q && japanese) {
-      const j = japanese;
-      const chomePart = j.chome ? `${j.chome}丁目` : "";
-      q = [j.prefecture, j.county, j.city, j.ward, j.district, chomePart]
-        .map((p) => (p == null ? "" : String(p)))
-        .filter(Boolean)
-        .join("");
-    }
-    if (!q) return null;
+    const j = japanese;
+    // PostcodeJP の city フィールドは郡＋市＋区を連結した値（例: 横浜市西区、国頭郡恩納村）
+    const cityCombined = `${j.county || ""}${j.city || ""}${j.ward || ""}`;
+
+    const parts = [];
+    if (j.prefecture) parts.push(`pref==${j.prefecture}`);
+    if (cityCombined) parts.push(`city==${cityCombined}`);
+    if (j.district)   parts.push(`town==${j.district}`);
+    if (parts.length === 0) return null;
+
+    const filter = parts.join(" and ");
+    console.debug("[address-resolver] /postcodes フィルタ:", filter);
 
     // Free プラン (1req/sec) に当たらないよう /parse 直後を避ける
     await new Promise((r) => setTimeout(r, CFG.POSTCODE_FALLBACK_DELAY_MS || 1100));
@@ -144,7 +146,7 @@
     const ctrl = new AbortController();
     const timer = setTimeout(() => ctrl.abort(), CFG.REQUEST_TIMEOUT_MS);
     try {
-      const url = `${CFG.POSTCODES_ENDPOINT}?q=${encodeURIComponent(q)}&limit=1`;
+      const url = `${CFG.POSTCODES_ENDPOINT}?filter=${encodeURIComponent(filter)}&limit=5`;
       const res = await fetch(url, {
         method: "GET",
         headers: { "apikey": CFG.API_KEY },
@@ -362,10 +364,7 @@
     // /parse が郵便番号を返さなかった場合は /postcodes でフォールバック検索
     if (candidates[0] && !candidates[0].postalCode && candidates[0].japanese) {
       console.debug("[address-resolver] /parse の郵便番号が null。/postcodes でフォールバック検索します");
-      const fallbackRaw = await lookupPostalCodeByAddress(
-        candidates[0].japanese,
-        candidates[0].formattedAddress
-      );
+      const fallbackRaw = await lookupPostalCodeByAddress(candidates[0].japanese);
       if (fallbackRaw) {
         candidates[0].postalCode = U.formatPostalCode(fallbackRaw);
         console.debug("[address-resolver] フォールバックで郵便番号を取得:", candidates[0].postalCode);
