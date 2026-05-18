@@ -58,18 +58,42 @@ const AddressResolverUtils = (() => {
       .trim();
   }
 
+  const KANJI_DIGITS = ["〇", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
+  /**
+   * 0〜99 の整数を漢数字へ変換する。
+   * 10→"十", 12→"十二", 20→"二十", 25→"二十五"。
+   * 100以上は対応外（そのまま数字を返す）。
+   * @param {number} n
+   * @returns {string}
+   */
+  function toKanjiNumeral(n) {
+    if (!Number.isFinite(n) || n < 0) return String(n);
+    if (n < 10) return KANJI_DIGITS[n];
+    if (n === 10) return "十";
+    if (n < 20) return `十${KANJI_DIGITS[n - 10]}`;
+    if (n < 100) {
+      const tens = Math.floor(n / 10);
+      const ones = n % 10;
+      return `${KANJI_DIGITS[tens]}十${ones === 0 ? "" : KANJI_DIGITS[ones]}`;
+    }
+    return String(n);
+  }
+
   /**
    * 丁目の値を表記用に整える。
-   * PostcodeJP は chome を数値で返すケースがあるため "1" → "1丁目" のように補う。
-   * 既に "丁目" を含む場合はそのまま。
+   * - 算用数字は漢数字へ変換（"1" → "一丁目"）
+   * - 既に "丁目" を含む場合は数字部分のみ抽出して再構成
+   * - 既に漢数字の場合はそのまま末尾に "丁目" を付与
    * @param {*} chome
    * @returns {string}
    */
   function formatChome(chome) {
     if (chome == null) return "";
-    const s = String(chome).trim();
+    let s = String(chome).trim();
     if (!s) return "";
-    if (s.endsWith("丁目")) return s;
+    if (s.endsWith("丁目")) s = s.slice(0, -2);
+    if (/^\d+$/.test(s)) s = toKanjiNumeral(parseInt(s, 10));
     return `${s}丁目`;
   }
 
@@ -124,6 +148,7 @@ const AddressResolverUtils = (() => {
     normalizeInput,
     formatPostalCode,
     formatChome,
+    toKanjiNumeral,
     joinNonEmpty,
     buildFieldValues,
     debounce,
