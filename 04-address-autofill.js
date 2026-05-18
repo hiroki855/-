@@ -37,6 +37,21 @@
   }
 
   /**
+   * フィールドの現在値を取得する。jQuery の .val() を経由するため、
+   * input/textarea/select/hidden いずれの種類でも一貫して取れる。
+   */
+  function getFieldValue(physicalName) {
+    try {
+      const $ctrl = (typeof $p !== "undefined") ? $p.getControl(physicalName) : null;
+      if (!$ctrl || !$ctrl.length) return "";
+      const v = $ctrl.val();
+      return v == null ? "" : String(v);
+    } catch (_) {
+      return "";
+    }
+  }
+
+  /**
    * プリザンターのフィールド設定。文字列・数値どちらも $p.set で投入できる前提。
    */
   function setField(physicalName, value) {
@@ -240,19 +255,37 @@
   const debouncedHandler = U.debounce(handleAddressChange, CFG.DEBOUNCE_MS);
 
   /**
-   * 編集画面ロード時、住所欄に値があり郵便番号が空ならインポート扱いで自動解析する。
+   * 編集画面ロード時、住所欄に値があり分割フィールドのいずれかが空ならインポート扱いで自動解析する。
    * CSV インポート直後にレコードを開いた場合、change イベントが発火しないため必要。
+   *
+   * Pleasanter はフォーム値のポピュレートが on_editor_load の後ろにずれるケースがあるため、
+   * 住所欄が空に見えても最大 ATTEMPTS 回までリトライする。
    */
   function autoResolveIfImported() {
-    const addrEl = getControlEl(F.ADDRESS_FULL);
-    const postalEl = getControlEl(F.POSTAL_CODE);
-    if (!addrEl) return;
-    const addr = (addrEl.value || "").trim();
-    const postal = postalEl ? (postalEl.value || "").trim() : "";
-    if (addr && !postal) {
-      console.debug("[address-resolver] インポート相当を検出: 自動解析を実行");
-      handleAddressChange();
-    }
+    const ATTEMPTS = 8;
+    const INTERVAL_MS = 250;
+    const SPLIT_FIELDS = [F.POSTAL_CODE, F.PREFECTURE, F.CITY, F.DISTRICT, F.REST];
+
+    const tryOnce = (left) => {
+      const addr = getFieldValue(F.ADDRESS_FULL).trim();
+      if (!addr) {
+        if (left > 0) {
+          setTimeout(() => tryOnce(left - 1), INTERVAL_MS);
+        } else {
+          console.debug("[address-resolver] 自動解析: 住所欄が空のため終了");
+        }
+        return;
+      }
+      const anyEmpty = SPLIT_FIELDS.some((name) => !getFieldValue(name).trim());
+      if (anyEmpty) {
+        console.debug("[address-resolver] 自動解析を実行:", addr);
+        handleAddressChange();
+      } else {
+        console.debug("[address-resolver] 自動解析スキップ: 分割フィールドは全て埋まっています");
+      }
+    };
+
+    tryOnce(ATTEMPTS);
   }
 
   /**
