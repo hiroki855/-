@@ -116,16 +116,67 @@
   }
 
   /**
+   * /parse のレスポンスから郵便番号配列を抽出する。
+   * API のレスポンス構造が以下のいずれかに揺れる可能性があるため、複数経路を試す:
+   *   - body.meta.postal_code: 配列 or 文字列
+   *   - body.postal_code: 配列 or 文字列
+   *   - body.japanese.postal_code: 文字列
+   *   - body.addresses[].postal_code: 各候補が持つ
+   * @returns {string[]}
+   */
+  function extractPostalCodes(body) {
+    if (!body) return [];
+    const candidates = [
+      body.meta && body.meta.postal_code,
+      body.postal_code,
+      body.japanese && body.japanese.postal_code,
+    ];
+    for (const c of candidates) {
+      if (Array.isArray(c) && c.length > 0) return c.map(String);
+      if (typeof c === "string" && c) return [c];
+    }
+    // addresses 配列形式
+    if (Array.isArray(body.addresses) && body.addresses.length > 0) {
+      const out = body.addresses
+        .map((a) => a && (a.postal_code || (a.meta && a.meta.postal_code)))
+        .filter((v) => typeof v === "string" && v);
+      if (out.length > 0) return out;
+    }
+    return [];
+  }
+
+  /**
+   * /parse のレスポンスから japanese オブジェクト配列を抽出する。
+   */
+  function extractJapaneseList(body) {
+    if (!body) return [];
+    if (Array.isArray(body.japanese)) return body.japanese;
+    if (body.japanese && typeof body.japanese === "object") return [body.japanese];
+    if (Array.isArray(body.addresses)) {
+      return body.addresses.map((a) => a && a.japanese).filter((j) => j && typeof j === "object");
+    }
+    return [];
+  }
+
+  /**
    * /parse のレスポンスから候補一覧を生成する。
-   * meta.postal_code が配列で、複数のときは japanese も配列となることを想定。
-   * 単数の場合は japanese を1件として扱う。
+   * 候補が複数のときは japanese・postal_code とも要素数が揃う想定だが、
+   * 揺れに備え長い方に合わせて対で取り出す。
    */
   function extractCandidates(body) {
     if (!body) return [];
-    const meta = body.meta || {};
-    const codes = Array.isArray(meta.postal_code) ? meta.postal_code : [];
-    const japaneseList = Array.isArray(body.japanese) ? body.japanese : (body.japanese ? [body.japanese] : []);
-    const score = typeof meta.score === "number" ? meta.score : null;
+
+    if (!extractCandidates._logged) {
+      console.debug("[address-resolver] API レスポンス（最初の1回のみ表示）:", body);
+      extractCandidates._logged = true;
+    }
+
+    const codes = extractPostalCodes(body);
+    const japaneseList = extractJapaneseList(body);
+
+    let score = null;
+    if (body.meta && typeof body.meta.score === "number") score = body.meta.score;
+    else if (typeof body.score === "number") score = body.score;
 
     if (codes.length === 0 && japaneseList.length === 0) return [];
 
